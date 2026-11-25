@@ -99,6 +99,9 @@ class TerminalUI:
         self._write("  /github     show repository status", (self.CYAN,))
         self._write("  /config     show or set a setting", (self.CYAN,))
         self._write("  /ops        log|stats", (self.CYAN,))
+        self._write("  /conversation list|new TITLE|switch ID", (self.CYAN,))
+        self._write("  /plan       list|run INTENT", (self.CYAN,))
+        self._write("  /project    list|add NAME PATH|task SUMMARY", (self.CYAN,))
         self._write("  1-10        open a menu section", (self.CYAN,))
         self._write("  text        send a request to the AI engine", (self.DIM,))
 

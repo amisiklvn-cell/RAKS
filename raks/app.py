@@ -108,6 +108,12 @@ class RaksApp:
             self._config(value)
         elif action == "ops":
             self._ops(value)
+        elif action == "conversation":
+            self._conversation(value)
+        elif action == "plan":
+            self._plan(value)
+        elif action == "project":
+            self._project(value)
         else:
             self.ui.error(f"unhandled command action {action!r}")
         return True
@@ -254,18 +260,99 @@ class RaksApp:
             for line in result.data["lines"]:
                 self.ui.info(line[:160])
 
+    def _conversation(self, value: str) -> None:
+        parts = value.split(None, 1)
+        operation = (parts[0].lower() if parts else "list")
+        if operation in ("list", ""):
+            self.ui.section("CONVERSATIONS")
+            rows = self.core.conversations()
+            if not rows:
+                self.ui.info("No conversations found.")
+            for row in rows:
+                flag = "active" if row["active"] else "saved"
+                self.ui.info(f"{row['id']}  {row['title']}  ({row['messages']} messages, {flag})")
+            return
+        if operation == "new" and len(parts) == 2:
+            conversation_id = self.core.new_conversation(parts[1].strip() or "default")
+            self.ui.info(f"created conversation {conversation_id}")
+            return
+        if operation == "switch" and len(parts) == 2:
+            ok = self.core.switch_conversation(parts[1].strip())
+            self.ui.info("switched conversation" if ok else "conversation not found")
+            return
+        self.ui.error("usage: /conversation list | new TITLE | switch ID")
+
+    def _plan(self, value: str) -> None:
+        parts = value.split(None, 1)
+        if not parts or not parts[0]:
+            self.ui.section("PLANNED INTENTS")
+            self.ui.info(", ".join(self.command_center.plans()))
+            return
+        intent = parts[0].lower()
+        execute = intent == "run"
+        if execute:
+            if len(parts) != 2:
+                self.ui.error("usage: /plan run INTENT")
+                return
+            intent = parts[1].lower()
+        try:
+            plan = self.command_center.plan(intent)
+        except NotImplementedError as exc:
+            self.ui.error(str(exc))
+            return
+        self.ui.section(f"PLAN: {plan.summary}")
+        for step in plan.steps:
+            flag = "approval" if step.requires_approval else "read-only"
+            self.ui.info(f"{step.description} | tool={step.tool} | {flag}")
+        if execute:
+            for step in plan.steps:
+                self._show_result(self.tools.execute(step.tool, step.arguments))
+
+    def _project(self, value: str) -> None:
+        parts = value.split(None, 2)
+        operation = (parts[0].lower() if parts else "list")
+        if operation in ("list", ""):
+            self.ui.section("PROJECTS")
+            projects = self.memory.recent_projects()
+            if not projects:
+                self.ui.info("No projects recorded yet.")
+            for row in projects:
+                self.ui.info(f"{row['name']}: {row['path']} ({row['created_at']})")
+            self.ui.section("TASKS")
+            tasks = self.memory.recent_tasks(10)
+            if not tasks:
+                self.ui.info("No tasks recorded yet.")
+            for row in tasks:
+                self.ui.info(f"[{row['status']}] {row['summary']}")
+            return
+        if operation == "add" and len(parts) >= 3:
+            stored = self.memory.record_project(parts[1], " ".join(parts[2:]))
+            self.ui.info("project recorded" if stored else "memory is disabled")
+            return
+        if operation == "task" and len(parts) >= 2:
+            stored = self.memory.record_task(" ".join(parts[1:]), "open")
+            self.ui.info("task recorded" if stored else "memory is disabled")
+            return
+        self.ui.error("usage: /project list | add NAME PATH | task SUMMARY")
+
     def _web(self, value: str) -> None:
         operation = (value or "status").lower()
         if operation == "start":
             if self.web is None:
-                self.web = WebServer(
-                    self.core,
-                    host=str(self.settings.get("web_host", "127.0.0.1")),
-                    port=int(self.settings.get("web_port", 8765)),
-                )
+                host = str(self.settings.get("web_host", "127.0.0.1"))
+                try:
+                    port = int(self.settings.get("web_port", 8765))
+                except (TypeError, ValueError):
+                    port = 8765
+                try:
+                    self.web = WebServer(self.core, host=host, port=port)
+                except ValueError as exc:
+                    self.ui.error(f"{exc}; using 127.0.0.1")
+                    self.web = WebServer(self.core, host="127.0.0.1", port=port)
             if self.web.thread is None:
                 self.web.start()
             self.ui.info(f"Browser interface: {self.web.url}")
+            self.ui.info("Session token is embedded in the page; API calls require it.")
         elif operation == "stop":
             if self.web is not None and self.web.thread is not None:
                 self.web.stop()
@@ -306,7 +393,7 @@ class RaksApp:
         self.ui.info("Use /code scaffold LANG DIR or /code validate PATH.")
 
     def _menu_projects(self) -> None:
-        self._show_result(self.tools.execute("list_dir"))
+        self._project("list")
         self._show_result(self.tools.execute("git_status"))
 
     def _menu_terminal(self) -> None:
@@ -316,7 +403,7 @@ class RaksApp:
     def _menu_research(self) -> None:
         self.ui.info(
             "Web research is available through the optional online AI provider only. "
-            "No dedicated crawler is included in v1.0."
+            "No dedicated crawler is included in v1.0.1."
         )
         self.ui.info(f"online provider: {self.engine.status()['online']}")
 

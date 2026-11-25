@@ -1,16 +1,20 @@
 import json
 import tempfile
 import unittest
+
+import raks
+import urllib.error
 import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
-from raks.config import load_settings
+from raks.config import load_settings, VERSION
 from raks.core import RAKSCore
-from raks.engine import EngineResponse, HybridAIEngine
+from raks.engine import EngineResponse
 from raks.memory import MemoryStore
 from raks.tools import ToolExecutor
-from raks.web import WebServer
+from raks.web import JS, WebServer
+from tests import AutoGate
 
 
 class FakeEngine:
@@ -29,13 +33,42 @@ def make_core(tmp):
     engine = FakeEngine()
     memory = MemoryStore(str(Path(tmp) / "memory.db"))
     tools = ToolExecutor({"workspaces": [tmp]}, AutoGate())
-    core = RAKSCore(load_settings(), engine, memory, tools)
-    return core, engine
+    return RAKSCore(load_settings(), engine, memory, tools), engine
 
 
-class AutoGate:
-    def approve(self, request):
-        return True
+def request(
+    base,
+    path,
+    method="GET",
+    payload=None,
+    token=None,
+    cookie=True,
+    origin=None,
+    content_type="application/json",
+    raw_body=None,
+):
+    headers = {}
+    if token:
+        headers["X-RAKS-Token"] = token
+        if cookie:
+            headers["Cookie"] = f"raks_session={token}"
+    if origin:
+        headers["Origin"] = origin
+    body = raw_body
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = content_type
+    elif raw_body is not None:
+        headers["Content-Type"] = content_type
+    req = urllib.request.Request(base + path, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return response.status, dict(response.headers), response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8")
+        headers = dict(error.headers)
+        error.close()
+        return error.code, headers, body
 
 
 class CoreTests(unittest.TestCase):
@@ -83,6 +116,34 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(read.data["content"], "ok")
             core.close()
 
+    def test_conversation_helpers_switch_without_overwrite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            core, _ = make_core(tmp)
+            first = core.new_conversation("first")
+            core.chat("first message")
+            second = core.new_conversation("second")
+            core.chat("second message")
+
+            self.assertTrue(core.switch_conversation(first))
+            self.assertIn("first message", [row["content"] for row in core.history(20)])
+            self.assertNotIn("second message", [row["content"] for row in core.history(20)])
+
+            self.assertTrue(core.switch_conversation(second))
+            self.assertIn("second message", [row["content"] for row in core.history(20)])
+            self.assertGreaterEqual(len(core.conversations()), 2)
+            self.assertFalse(core.switch_conversation("0" * 32))
+            core.close()
+
+
+class MetadataTests(unittest.TestCase):
+    def test_release_metadata_is_consistent(self):
+        self.assertEqual(raks.__version__, VERSION)
+        pyproject = (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(f'version = "{VERSION}"', pyproject)
+        self.assertIn('requires-python = ">=3.12"', pyproject)
+
 
 class WebTests(unittest.TestCase):
     def setUp(self):
@@ -92,49 +153,141 @@ class WebTests(unittest.TestCase):
             self.server = WebServer(self.core, host="127.0.0.1", port=0)
             self.server.start()
         self.base = self.server.url
+        self.token = self.server.session_token
+        self.origin = f"http://127.0.0.1:{self.server.port}"
 
     def tearDown(self):
         self.server.stop()
         self.core.close()
         self.tmp.cleanup()
 
-    def get(self, path):
-        with urllib.request.urlopen(self.base + path, timeout=5) as response:
-            return response.status, response.read().decode("utf-8")
-
-    def post(self, path, payload):
-        request = urllib.request.Request(
-            self.base + path,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
+    def authorized(self, path, method="GET", payload=None, **kwargs):
+        return request(
+            self.base,
+            path,
+            method=method,
+            payload=payload,
+            token=self.token,
+            origin=self.origin,
+            **kwargs,
         )
-        with urllib.request.urlopen(request, timeout=10) as response:
-            return response.status, json.loads(response.read().decode("utf-8"))
 
-    def test_index_page_loads(self):
-        status, body = self.get("/")
+    def test_index_contains_session_token_and_version(self):
+        status, _, body = request(self.base, "/")
         self.assertEqual(status, 200)
-        self.assertIn("RAKS AI", body)
-        self.assertIn("id=\"prompt\"", body)
+        self.assertIn(self.token, body)
+        self.assertIn(VERSION, body)
+        self.assertIn('id="conversation-select"', body)
 
-    def test_status_and_history_endpoints(self):
-        status, body = self.get("/api/status")
-        self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body)["engine"]["mode"], "auto")
-        status, body = self.get("/api/history?limit=5")
-        self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body)["messages"], [])
+    def test_javascript_uses_history_messages_shape(self):
+        self.assertIn("data.messages.forEach", JS)
+        self.assertNotIn("history.forEach", JS)
+        self.assertIn("X-RAKS-Token", JS)
 
-    def test_chat_endpoint_uses_shared_core(self):
-        status, body = self.post("/api/chat", {"prompt": "browser hello"})
+    def test_api_requires_token_and_cookie(self):
+        self.assertEqual(request(self.base, "/api/status")[0], 401)
+        self.assertEqual(request(self.base, "/api/status", token=self.token, cookie=False)[0], 401)
+        self.assertEqual(request(self.base, "/api/status", token="wrong")[0], 401)
+        status, _, body = request(self.base, "/api/status", token=self.token)
         self.assertEqual(status, 200)
-        self.assertEqual(body["text"], "fake answer")
-        self.assertEqual(len(self.engine.calls), 1)
-        _, history = self.get("/api/history")
-        messages = json.loads(history)["messages"]
+        self.assertIn("engine", json.loads(body))
+
+    def test_unauthorized_post_does_not_reach_core(self):
+        status, _, _ = request(
+            self.base, "/api/chat", method="POST", payload={"prompt": "hello"}
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(self.engine.calls, [])
+
+    def test_cross_origin_post_is_rejected(self):
+        status, _, body = request(
+            self.base,
+            "/api/chat",
+            method="POST",
+            payload={"prompt": "hello"},
+            token=self.token,
+            origin="https://evil.example",
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("forbidden", json.loads(body)["error"])
+        self.assertEqual(self.engine.calls, [])
+
+    def test_content_type_is_enforced(self):
+        status, _, _ = request(
+            self.base,
+            "/api/chat",
+            method="POST",
+            token=self.token,
+            origin=self.origin,
+            raw_body=b'{"prompt":"hello"}',
+            content_type="text/plain",
+        )
+        self.assertEqual(status, 415)
+        self.assertEqual(self.engine.calls, [])
+
+    def test_valid_chat_and_history_endpoints(self):
+        status, _, body = self.authorized("/api/chat", method="POST", payload={"prompt": "browser hello"})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["text"], "fake answer")
+        status, _, body = self.authorized("/api/history?limit=5")
+        self.assertEqual(status, 200)
+        messages = json.loads(body)["messages"]
         self.assertTrue(any(item["content"] == "browser hello" for item in messages))
 
-    def test_unknown_route_returns_404(self):
-        with self.assertRaises(Exception):
-            self.get("/missing")
+    def test_conversations_are_isolated_over_http(self):
+        status, _, body = self.authorized("/api/conversations", method="POST", payload={"title": "work"})
+        self.assertEqual(status, 201)
+        work_id = json.loads(body)["id"]
+        self.authorized("/api/chat", method="POST", payload={"prompt": "work secret"})
+
+        status, _, body = self.authorized("/api/conversations", method="POST", payload={"title": "home"})
+        self.assertEqual(status, 201)
+        home_id = json.loads(body)["id"]
+        self.authorized("/api/chat", method="POST", payload={"prompt": "home secret"})
+
+        self.authorized("/api/conversations/switch", method="POST", payload={"id": work_id})
+        _, _, body = self.authorized("/api/history")
+        contents = [item["content"] for item in json.loads(body)["messages"]]
+        self.assertIn("work secret", contents)
+        self.assertNotIn("home secret", contents)
+
+        self.authorized("/api/conversations/switch", method="POST", payload={"id": home_id})
+        _, _, body = self.authorized("/api/history")
+        contents = [item["content"] for item in json.loads(body)["messages"]]
+        self.assertIn("home secret", contents)
+        self.assertNotIn("work secret", contents)
+
+    def test_no_tool_execution_endpoint(self):
+        with patch.object(self.core, "run_tool") as spy:
+            self.assertEqual(request(self.base, "/api/tools", token=self.token)[0], 200)
+            self.assertEqual(
+                request(self.base, "/api/tools", method="POST", payload={}, token=self.token)[0],
+                404,
+            )
+            self.assertEqual(
+                request(self.base, "/api/tools/run", method="POST", payload={}, token=self.token)[0],
+                404,
+            )
+            spy.assert_not_called()
+
+    def test_loopback_only_binding(self):
+        for host in ("0.0.0.0", "192.168.1.2", "example.com"):
+            with self.subTest(host=host), self.assertRaises(ValueError):
+                WebServer(self.core, host=host, port=0)
+
+    def test_safe_error_responses(self):
+        status, headers, body = self.authorized("/missing")
+        self.assertEqual(status, 404)
+        self.assertEqual(json.loads(body), {"error": "not found"})
+        self.assertEqual(headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertIn("Content-Security-Policy", headers)
+        self.assertNotIn("Traceback", body)
+        self.assertNotIn("Secure", headers.get("Server", ""))
+
+    def test_request_size_limit(self):
+        huge = "x" * 120_000
+        status, _, body = self.authorized(
+            "/api/chat", method="POST", payload={"prompt": huge}
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("size", json.loads(body)["error"])

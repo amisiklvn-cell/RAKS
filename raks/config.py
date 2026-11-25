@@ -1,4 +1,4 @@
-"""Configuration for RAKS AI v1.0.
+"""Configuration for RAKS AI v1.0.1.
 
 Settings are stored outside Git as JSON. Secrets are never stored here; only
 the *name* of an environment variable may be stored.
@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 APP_NAME = "RAKS AI"
 APP_NAME_SHORT = "RAKS"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 PROJECT_URL = "https://github.com/amisiklvn-cell/RAKS"
 
 WORKSPACE_ROOT = Path.home() / "RAKS"
@@ -88,13 +88,27 @@ def load_settings(custom: Optional[str] = None) -> Dict[str, Any]:
 
 
 def save_settings(settings: Dict[str, Any], custom: Optional[str] = None) -> Path:
-    """Persist settings with 0600 permissions. Never writes secret values."""
+    """Persist settings atomically with 0600 permissions. No secret values."""
     path = settings_path(custom)
     path.parent.mkdir(parents=True, exist_ok=True)
     clean = {k: v for k, v in settings.items() if k in DEFAULT_SETTINGS}
-    path.write_text(json.dumps(clean, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary = path.with_name(path.name + ".tmp")
     try:
+        # Create with private permissions before any configuration bytes are
+        # written, then atomically replace the old file.
+        descriptor = os.open(
+            str(temporary),
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            0o600,
+        )
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(clean, indent=2, sort_keys=True) + "\n")
+        os.replace(str(temporary), str(path))
         path.chmod(0o600)
     except OSError:
-        pass
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return path

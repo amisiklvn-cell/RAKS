@@ -14,6 +14,9 @@ class CommandInterpreterTests(unittest.TestCase):
             ("/clear", "clear"),
             ("/menu", "menu"),
             ("/exit", "exit"),
+            ("/conversation", "conversation"),
+            ("/plan", "plan"),
+            ("/project", "project"),
         ):
             with self.subTest(raw=raw):
                 self.assertEqual(self.interpreter.parse(raw).action, expected)

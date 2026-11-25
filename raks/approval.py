@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -45,13 +44,6 @@ class DenyGate(ApprovalGate):
     def approve(self, request: ApprovalRequest) -> bool:
         print(f"Denied: {self.message} ({request.operation})")
         return False
-
-
-class AutoApproveGate(ApprovalGate):
-    """For tests only. Never used by terminal or browser interfaces."""
-
-    def approve(self, request: ApprovalRequest) -> bool:
-        return True
 
 
 def describe(request: ApprovalRequest) -> str:

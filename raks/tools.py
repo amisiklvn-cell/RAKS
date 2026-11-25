@@ -119,6 +119,10 @@ class ToolExecutor:
     def _default_workspace(self) -> Path:
         return self.workspaces[0]
 
+    def resolve_path(self, value: str) -> Path:
+        """Public workspace-checked resolver for companion modules."""
+        return self._workspace_path(value)
+
     def _backup_file(self, path: Path) -> Optional[str]:
         if not path.is_file():
             return None
@@ -151,7 +155,6 @@ class ToolExecutor:
         self,
         tool_name: str,
         arguments: Optional[Dict[str, Any]] = None,
-        auto_approve: bool = False,
     ) -> ToolResult:
         name = (tool_name or "").strip().lower()
         args = arguments or {}
@@ -160,7 +163,7 @@ class ToolExecutor:
         if name == "execute_command":
             return _fail("Arbitrary command execution is disabled by design.")
 
-        if self.requires_approval(name) and not auto_approve:
+        if self.requires_approval(name):
             target = str(
                 args.get("path") or args.get("src") or args.get("cwd") or self._default_workspace()
             )
@@ -284,17 +287,26 @@ class ToolExecutor:
             raise ValueError("archive must be inside the RAKS backup directory")
         target = self._workspace_path(str(args.get("target") or self._default_workspace()))
         restored = 0
+        skipped = 0
         with tarfile.open(archive, "r:gz") as tar:
             for member in tar.getmembers():
                 parts = Path(member.name).parts
                 if Path(member.name).is_absolute() or ".." in parts:
+                    skipped += 1
                     continue
                 destination = (target / member.name).resolve()
                 if not destination.is_relative_to(target):
+                    skipped += 1
                     continue
-                tar.extract(member, path=str(target))
+                # Explicit data filter keeps traversal/symlink/lib extraction
+                # protections independent of the interpreter's default policy.
+                tar.extract(member, path=str(target), filter="data")
                 restored += 1
-        return _ok(f"restored {restored} entries", restored=restored)
+        return _ok(
+            f"restored {restored} entries, skipped {skipped} unsafe entries",
+            restored=restored,
+            skipped=skipped,
+        )
 
     def _tool_config_set(self, args: Dict[str, Any]) -> ToolResult:
         key, value = args.get("key"), args.get("value")
@@ -329,8 +341,15 @@ class ToolExecutor:
         message = str(args.get("message") or "").strip()
         if not message:
             return _fail("commit message is required")
+        paths = args.get("paths") or []
+        if not isinstance(paths, list) or not paths:
+            return _fail("explicit file paths are required; git add -A is disabled")
         workspace = self._default_workspace()
-        staged = self._run(["git", "add", "-A"], workspace)
+        relative = []
+        for item in paths:
+            resolved = self._workspace_path(str(item))
+            relative.append(str(resolved.relative_to(workspace)))
+        staged = self._run(["git", "add", "--", *relative], workspace)
         if not staged.success:
             return staged
         return self._run(["git", "commit", "-m", message], workspace)

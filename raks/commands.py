@@ -25,6 +25,9 @@ SLASH_COMMANDS = {
     "/github": "github",
     "/config": "config",
     "/ops": "ops",
+    "/conversation": "conversation",
+    "/plan": "plan",
+    "/project": "project",
 }
 
 

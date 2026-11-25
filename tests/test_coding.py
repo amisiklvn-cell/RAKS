@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from raks.approval import AutoApproveGate
+from tests import AutoGate
 from raks.coding import CodingAgent, detect_language
 from raks.tools import ToolExecutor
 
@@ -11,7 +11,7 @@ class CodingTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.agent = CodingAgent(ToolExecutor({"workspaces": [self.tmp.name]}, AutoApproveGate()))
+        self.agent = CodingAgent(ToolExecutor({"workspaces": [self.tmp.name]}, AutoGate()))
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -52,6 +52,10 @@ class CodingTests(unittest.TestCase):
         report = self.agent.validate(str(path))
         self.assertFalse(report.ok)
         self.assertIn("invalid XML", report.text)
+
+    def test_validate_outside_workspace_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.agent.validate("/etc/passwd")
 
     def test_unsupported_language_is_honest(self):
         result = self.agent.scaffold("cobol", str(self.root / "x"))

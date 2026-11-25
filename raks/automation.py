@@ -98,7 +98,7 @@ class GitHubClient:
     def create_issue(self, title: str, body: str) -> str:
         if not title.strip():
             raise IntegrationUnavailable("issue title is required")
-        logger.log("github_issue_create", title=title[:80])
+        logger.log("github_issue_create")
         return self._run(
             ["issue", "create", "--repo", self.repo, "--title", title[:200], "--body", body[:4000]]
         )

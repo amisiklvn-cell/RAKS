@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS projects (
     metadata TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 """
 
@@ -74,25 +78,93 @@ class MemoryStore:
                 pass
             self._connection = sqlite3.connect(str(self.path), check_same_thread=False)
             self._connection.executescript(SCHEMA)
+            self._connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             self._connection.commit()
+            active = self._get_state("active_conversation")
+            if active and self._conversation_exists(active):
+                self.current_conversation = active
+                return
             previous = self._connection.execute(
                 "SELECT id FROM conversations ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
-            self.current_conversation = previous[0] if previous else self.start_conversation("default")
+            if previous:
+                self.current_conversation = previous[0]
+                self._set_state("active_conversation", previous[0])
+            else:
+                self.start_conversation("default")
 
     def _disabled(self, what: str) -> MemoryResult:
         return MemoryResult(False, f"Memory is disabled; {what} was not stored.")
 
+    def _get_state(self, key: str) -> str:
+        if self._connection is None:
+            return ""
+        row = self._connection.execute(
+            "SELECT value FROM state WHERE key = ?", (key,)
+        ).fetchone()
+        return str(row[0]) if row else ""
+
+    def _set_state(self, key: str, value: str) -> None:
+        if self._connection is None:
+            return
+        self._connection.execute(
+            "INSERT INTO state(key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(value)),
+        )
+        self._connection.commit()
+
+    def _conversation_exists(self, conversation_id: str) -> bool:
+        if self._connection is None:
+            return False
+        row = self._connection.execute(
+            "SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)
+        ).fetchone()
+        return row is not None
+
+    def conversations(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Return conversations with counts, newest first; flag the active one."""
+        if not self.enabled or self._connection is None:
+            return []
+        cursor = self._connection.execute(
+            "SELECT c.id, c.title, c.created_at, COUNT(m.id) AS messages "
+            "FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id "
+            "GROUP BY c.id ORDER BY c.rowid DESC LIMIT ?",
+            (max(1, min(int(limit), 100)),),
+        )
+        return [
+            {
+                "id": row[0],
+                "title": row[1],
+                "created_at": row[2],
+                "messages": int(row[3]),
+                "active": row[0] == self.current_conversation,
+            }
+            for row in cursor.fetchall()
+        ]
+
     def start_conversation(self, title: str = "default") -> str:
+        if not self.enabled or self._connection is None:
+            return ""
         conversation_id = uuid.uuid4().hex
-        assert self._connection is not None
         self._connection.execute(
             "INSERT INTO conversations(id, title, created_at) VALUES (?, ?, ?)",
             (conversation_id, title or "default", _now()),
         )
         self._connection.commit()
         self.current_conversation = conversation_id
+        self._set_state("active_conversation", conversation_id)
         return conversation_id
+
+    def switch_conversation(self, conversation_id: str) -> bool:
+        """Switch the active conversation without deleting or overwriting any."""
+        if not self.enabled or self._connection is None:
+            return False
+        if not self._conversation_exists(str(conversation_id)):
+            return False
+        self.current_conversation = str(conversation_id)
+        self._set_state("active_conversation", self.current_conversation)
+        return True
 
     def remember(
         self,
@@ -174,6 +246,18 @@ class MemoryStore:
         )
         self._connection.commit()
         return True
+
+    def recent_projects(self, limit: int = 10) -> List[Dict[str, str]]:
+        if not self.enabled or self._connection is None:
+            return []
+        cursor = self._connection.execute(
+            "SELECT name, path, created_at FROM projects ORDER BY id DESC LIMIT ?",
+            (max(1, min(int(limit), 100)),),
+        )
+        return [
+            {"name": row[0], "path": row[1], "created_at": row[2]}
+            for row in cursor.fetchall()
+        ]
 
     def stats(self) -> Dict[str, int]:
         if not self.enabled or self._connection is None:

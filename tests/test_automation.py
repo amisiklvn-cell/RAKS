@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from raks.approval import AutoApproveGate, DenyGate
+from raks.approval import DenyGate
+from tests import AutoGate
 from raks.automation import AutomationCenter, GitHubClient, IntegrationUnavailable
 from raks.planner import DevelopmentCommandCenter
 from raks.tools import ToolExecutor
@@ -26,7 +27,7 @@ class AutomationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         subprocess.run(["git", "init", "-q", self.tmp.name], check=False, capture_output=True)
-        self.tools = ToolExecutor({"workspaces": [self.tmp.name]}, AutoApproveGate())
+        self.tools = ToolExecutor({"workspaces": [self.tmp.name]}, AutoGate())
 
     def tearDown(self):
         self.tmp.cleanup()

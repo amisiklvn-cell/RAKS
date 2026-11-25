@@ -3,8 +3,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from raks.approval import AutoApproveGate, DenyGate
+from raks.approval import DenyGate
 from raks.tools import ToolExecutor
+from tests import AutoGate
 
 
 class ToolTests(unittest.TestCase):
@@ -19,7 +20,7 @@ class ToolTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def make_executor(self, gate=None):
-        return ToolExecutor(self.settings, gate or AutoApproveGate())
+        return ToolExecutor(self.settings, gate or AutoGate())
 
     def test_read_only_tools_need_no_approval(self):
         executor = self.make_executor(DenyGate())
@@ -71,6 +72,16 @@ class ToolTests(unittest.TestCase):
         self.assertTrue(listing.success)
         self.assertTrue(any(item["name"] == "c.txt" for item in listing.data["entries"]))
         self.assertEqual(reading.data["content"], "content")
+
+    def test_git_commit_requires_explicit_paths(self):
+        executor = self.make_executor()
+        with patch.object(executor, "_run") as run:
+            result = executor.execute("git_commit", {"message": "test"})
+        self.assertFalse(result.success)
+        self.assertIn("explicit", result.message)
+        run.assert_not_called()
+        source = (Path(__file__).parent.parent / "raks" / "tools.py").read_text(encoding="utf-8")
+        self.assertNotIn('"git", "add", "-A"', source)
 
     def test_unknown_tool_is_not_implemented(self):
         executor = self.make_executor()

@@ -1,62 +1,59 @@
-# Development Command Center — design (not implemented)
+# Development Command Center — v1.0.1 status
 
-This document describes the future system that will let you give RAKS
-natural-language instructions such as "create a Python app", "fix errors in my
-project", "build an APK", or "push approved changes to GitHub".
+The Development Command Center is **partly implemented**. It is a deterministic
+planner, not a natural-language coding agent.
 
-No part of this system is active in v0.1.0. The interfaces exist in
-`raks/planner.py` so later stages can grow into them without coupling the UI,
-AI, and tools together.
+## What works now
 
-## Required flow
+- `/plan` lists the fixed intents and shows their steps.
+- `/plan run INTENT` executes those steps through `ToolExecutor` using the
+  normal approval gate.
+- Plans are defined only for `status`, `history`, `backup`, `scan`, `tests` and
+  `compile`.
+- Unknown intents are refused with `NotImplementedError`; input is never
+  translated into shell commands.
+
+## What is still not implemented
+
+- AI-driven interpretation of free-form requests into plans.
+- Automatic extraction of paths, constraints or ambiguity from natural text.
+- Dynamic tool creation or shell command generation.
+- Automatic Git pushes, APK builds or issue creation from a plan.
+
+These remain interface/design areas only. `TaskPlan`, `PlanStep`,
+`ApprovalRequest` and `TaskResult` describe the intended shape but the current
+planner does not use an AI model.
+
+## Required flow for future work
 
 1. **Understand the request**  
-   `CommandInterpreter` classifies the input. The AI engine extracts intent,
-   target paths, constraints, and ambiguity.
+   `CommandInterpreter` classifies input; a future AI layer would extract
+   intent, targets and ambiguity.
 
 2. **Create a task plan**  
-   `DevelopmentCommandCenter.interpret()` returns a `TaskPlan` made of
-   `PlanStep` objects. Each step names a tool, arguments, and whether approval
-   is required.
+   A future planner would return `TaskPlan` objects with named tools.
 
 3. **Show the plan**  
-   The terminal displays the plan before anything happens. No hidden action.
+   The terminal must display the plan before anything happens. `/plan` already
+   does this for fixed intents.
 
 4. **Request approval**  
-   For writes, installs, builds, and Git pushes, RAKS calls
-   `request_approval()` and waits for an explicit yes. A refusal cancels the
-   step.
+   Writes, builds and Git operations must ask `CLIApprovalGate` explicitly.
 
 5. **Execute approved actions**  
-   Only `ToolExecutor` may perform actions. It will refuse unapproved steps and
-   restrict file operations to `~/RAKS`.
+   Only `ToolExecutor` may act, restricted to the approved workspace.
 
 6. **Report honestly**  
-   `TaskResult` records success or failure with the real output. RAKS will not
-   claim success when a command failed.
+   Failures are reported as failures; no simulated success.
 
 7. **Save history**  
-   Approved task summaries are written to SQLite memory in Stage 3. Logs keep
-   event names only, never secret values.
+   Task summaries can be stored by `MemoryStore.record_task()` and shown with
+   `/project list`. Logs keep only allowlisted metadata, never prompts or
+   secret values.
 
-## Example future plan
-
-```text
-Request: "Create a Python application in ~/RAKS/tools/hello"
-
-Plan:
-  1. inspect workspace            tool=inspect       approval=no
-  2. create directory             tool=write_file    approval=yes
-  3. write hello.py               tool=write_file    approval=yes
-  4. run tests                    tool=execute       approval=yes
-  5. report result                tool=report        approval=no
-```
-
-Steps 2–4 would wait for approval. There is no execution path in v0.1.0.
-
-## Non-goals for this stage
+## Non-goals
 
 - No natural-language shell execution.
 - No automatic Git pushes.
 - No simulated AI reasoning.
-- No backups deletion or writes outside the approved workspace.
+- No writes outside the approved workspace.

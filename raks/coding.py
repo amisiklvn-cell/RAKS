@@ -35,7 +35,7 @@ TEMPLATES: Dict[str, Dict[str, str]] = {
     "html": {"index.html": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>RAKS</title>\n</head>\n<body>\n<h1>Hello from RAKS</h1>\n</body>\n</html>\n"},
     "css": {"style.css": "/* RAKS CSS starter */\nbody {\n  margin: 0;\n  font-family: monospace;\n}\n"},
     "bash": {"main.sh": "#!/usr/bin/env bash\nset -euo pipefail\n# RAKS Bash starter\necho \"Hello from RAKS\"\n"},
-    "json": {"config.json": "{\n  \"name\": \"raks\",\n  \"version\": \"1.0.0\"\n}\n"},
+    "json": {"config.json": "{\n  \"name\": \"raks\",\n  \"version\": \"1.0.1\"\n}\n"},
     "xml": {"data.xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<raks>\n  <message>Hello from RAKS</message>\n</raks>\n"},
     "android": {
         "AndroidManifest.xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" package=\"com.example.raks\">\n    <application android:label=\"RAKS\">\n        <activity android:name=\".MainActivity\" android:exported=\"true\">\n            <intent-filter>\n                <action android:name=\"android.intent.action.MAIN\" />\n                <category android:name=\"android.intent.category.LAUNCHER\" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>\n",
@@ -108,7 +108,7 @@ class CodingAgent:
 
     def validate(self, path: str) -> ValidationReport:
         """Static validation of a file or directory."""
-        target = Path(path).expanduser().resolve()
+        target = self.tools.resolve_path(path)
         language = detect_language(target)
         files: List[Path] = []
         if target.is_file():

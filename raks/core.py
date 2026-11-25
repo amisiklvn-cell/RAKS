@@ -51,10 +51,23 @@ class RAKSCore:
             "error": response.error,
         }
 
-    def history(self, limit: int = 20) -> List[Dict[str, str]]:
-        rows = self.memory.recent(limit)
+    def history(
+        self,
+        limit: int = 20,
+        conversation_id: Optional[str] = None,
+    ) -> List[Dict[str, str]]:
+        rows = self.memory.recent(limit, conversation_id=conversation_id)
         rows.reverse()
         return rows
+
+    def conversations(self) -> List[Dict[str, Any]]:
+        return self.memory.conversations()
+
+    def new_conversation(self, title: str = "default") -> str:
+        return self.memory.start_conversation(title)
+
+    def switch_conversation(self, conversation_id: str) -> bool:
+        return self.memory.switch_conversation(conversation_id)
 
     def status(self) -> Dict[str, Any]:
         status: Dict[str, Any] = system.collect_system_status()
