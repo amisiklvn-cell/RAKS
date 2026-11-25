@@ -1,18 +1,25 @@
-"""Design-only interfaces for the Development Command Center (Stage 9).
+"""Development Command Center planning layer.
 
-Separation of concerns:
-  - commands.CommandInterpreter classifies input.
-  - planner.DevelopmentCommandCenter turns a trusted task into a plan.
-  - engine.AIEngine provides reasoning when it exists.
-  - tools.ToolExecutor performs approved actions when it exists.
-
-None of these interfaces are active in v0.1.0.
+The interpreter classifies input, this module builds an explicit plan, and the
+tool executor performs only approved, named operations. Natural-language text
+is never turned into shell commands.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+
+from .tools import APPROVAL_REQUIRED
+
+TASK_PLANS = {
+    "status": ("Report system and workspace status", [("status", {})]),
+    "history": ("Show recent memory history", [("git_log", {"limit": 5})]),
+    "backup": ("Back up the approved workspace", [("backup", {})]),
+    "scan": ("Run a defensive security inspection", [("security_scan", {})]),
+    "tests": ("Run the test suite", [("run_tests", {})]),
+    "compile": ("Compile Python sources", [("compile_python", {})]),
+}
 
 
 @dataclass(frozen=True)
@@ -44,15 +51,23 @@ class TaskResult:
 
 
 class DevelopmentCommandCenter:
-    """Interfaces reserved for later stages. Every entry point refuses."""
+    """Builds deterministic plans for trusted, named commands only."""
 
-    NOT_READY = "Development Command Center is not implemented yet in v0.1.0."
+    def plan(self, intent: str) -> TaskPlan:
+        key = (intent or "").strip().lower().lstrip("/")
+        if key not in TASK_PLANS:
+            raise NotImplementedError(f"no plan is defined for {intent!r}")
+        summary, operations = TASK_PLANS[key]
+        steps = [
+            PlanStep(
+                description=f"Execute {tool}",
+                tool=tool,
+                requires_approval=tool in APPROVAL_REQUIRED,
+                arguments=dict(arguments),
+            )
+            for tool, arguments in operations
+        ]
+        return TaskPlan(summary=summary, steps=steps)
 
-    def interpret(self, instruction: str) -> TaskPlan:
-        raise NotImplementedError(self.NOT_READY)
-
-    def request_approval(self, request: ApprovalRequest) -> bool:
-        raise NotImplementedError(self.NOT_READY)
-
-    def execute(self, plan: TaskPlan, approvals: List[bool]) -> TaskResult:
-        raise NotImplementedError(self.NOT_READY)
+    def plans(self) -> List[str]:
+        return sorted(TASK_PLANS)
