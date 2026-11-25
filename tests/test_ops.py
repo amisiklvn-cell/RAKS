@@ -63,3 +63,14 @@ class OperationsTests(unittest.TestCase):
                 ToolExecutor({"workspaces": [str(self.root)]}, DenyGate())
             ).restore("none.tar.gz")
         self.assertFalse(denied.success)
+
+    def test_backup_restore_round_trip(self):
+        with patch("raks.tools.BACKUP_DIR", self.backups), \
+             patch("raks.ops.BACKUP_DIR", self.backups):
+            (self.root / "note.txt").write_text("restore me", encoding="utf-8")
+            created = self.ops.backup([str(self.root / "note.txt")])
+            self.assertTrue(created.success, created.message)
+            (self.root / "note.txt").unlink()
+            restored = self.ops.restore(created.data["archive"], str(self.root))
+            self.assertTrue(restored.success, restored.message)
+            self.assertEqual((self.root / "note.txt").read_text(encoding="utf-8"), "restore me")

@@ -287,7 +287,7 @@ class ToolExecutor:
         with tarfile.open(archive, "r:gz") as tar:
             for member in tar.getmembers():
                 parts = Path(member.name).parts
-                if member.isabs() or ".." in parts:
+                if Path(member.name).is_absolute() or ".." in parts:
                     continue
                 destination = (target / member.name).resolve()
                 if not destination.is_relative_to(target):
