@@ -162,7 +162,11 @@ class RaksApp:
             return
         operation = parts[0].lower()
         if operation == "validate" and len(parts) >= 2:
-            report = self.coding.validate(" ".join(parts[1:]))
+            try:
+                report = self.coding.validate(" ".join(parts[1:]))
+            except ValueError as exc:
+                self.ui.error(str(exc))
+                return
             self.ui.section("VALIDATION")
             for line in report.text.splitlines():
                 self.ui.info(line)

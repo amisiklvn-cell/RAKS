@@ -130,6 +130,12 @@ class AppTests(unittest.TestCase):
         app.dispatch(CommandResult("web", "status"))
         self.assertIn("not running", stream.getvalue())
 
+    def test_code_validate_outside_workspace_is_reported(self):
+        stream = io.StringIO()
+        app = self.make_app(stream)
+        app.dispatch(CommandResult("code", "validate /etc/passwd"))
+        self.assertIn("outside approved workspace", stream.getvalue())
+
     def test_conversation_plan_and_project_commands(self):
         stream = io.StringIO()
         app = self.make_app(stream)
