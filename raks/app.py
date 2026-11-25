@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, Optional, TextIO
 
 from . import commands, config, engine, logger, memory, planner, system, tools
+from .config import load_settings
 from .ui import TerminalUI
 
 MENU_NAMES = {str(number): name for number, name in enumerate(config.MENU_ITEMS, start=1)}
@@ -14,7 +15,8 @@ class RaksApp:
     def __init__(self, stream: Optional[TextIO] = None) -> None:
         self.ui = TerminalUI(stream)
         self.interpreter = commands.CommandInterpreter()
-        self.engine = engine.AIEngine()
+        self.settings = load_settings()
+        self.engine = engine.HybridAIEngine(self.settings)
         self.tools = tools.ToolExecutor()
         self.command_center = planner.DevelopmentCommandCenter()
         self.memory = memory.MemoryStore()
@@ -78,8 +80,10 @@ class RaksApp:
 
     def _chat(self, prompt: str) -> None:
         response = self.engine.respond(prompt)
-        self.ui.not_implemented("AI Conversation")
-        self.ui.info(response.text)
+        if not response.available:
+            self.ui.error(response.text)
+            return
+        self.ui.info(f"[{response.route}/{response.provider}] {response.text}")
 
     def _menu_item(self, number: str) -> None:
         name = MENU_NAMES[number]
