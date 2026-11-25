@@ -52,6 +52,25 @@ def disk_info(path: Optional[str] = None) -> Dict[str, int]:
     }
 
 
+def process_usage() -> Dict[str, int]:
+    """Return current-process memory usage in kB (Linux /proc, else zeros)."""
+    values = {"rss_kb": 0, "vms_kb": 0}
+    try:
+        lines = Path("/proc/self/status").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        if line.startswith("VmRSS:"):
+            parts = line.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                values["rss_kb"] = int(parts[1])
+        elif line.startswith("VmSize:"):
+            parts = line.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                values["vms_kb"] = int(parts[1])
+    return values
+
+
 def collect_system_status() -> Dict[str, str]:
     memory = parse_meminfo()
     disk = disk_info()
@@ -67,6 +86,6 @@ def collect_system_status() -> Dict[str, str]:
         "storage_free": format_bytes(disk.get("free_bytes")),
         "git": "available" if shutil.which("git") else "missing",
         "gh": "available" if shutil.which("gh") else "missing",
-        "ai_engine": "not loaded (Stage 2)",
+        "ai_engine": "hybrid router",
         "mode": "offline-first",
     }

@@ -23,6 +23,7 @@ from .config import BACKUP_DIR, WORKSPACE_ROOT, load_settings, save_settings
 
 APPROVAL_REQUIRED = frozenset(
     {
+        "backup",
         "write_file",
         "create_dir",
         "move_file",
@@ -41,6 +42,7 @@ APPROVAL_REQUIRED = frozenset(
 )
 
 APPROVAL_REASONS = {
+    "backup": "this creates an archive of workspace files",
     "write_file": "this modifies a file in the approved workspace",
     "create_dir": "this creates a directory",
     "move_file": "this moves a file",

@@ -77,15 +77,30 @@ class TerminalUI:
             self._write(f"  {number:>2}. {name}", (self.CYAN,))
         self._write("Enter a number, or type /help for commands.", (self.DIM,))
 
+    def section(self, title: str) -> None:
+        self.newline()
+        self._write(title, (self.BOLD, self.RED))
+
     def help(self) -> None:
         self._write("COMMANDS", (self.BOLD, self.RED))
-        self._write("  /help     show this help", (self.CYAN,))
-        self._write("  /status   show system status", (self.CYAN,))
-        self._write("  /clear    clear the screen", (self.CYAN,))
-        self._write("  /menu     show the main menu", (self.CYAN,))
-        self._write("  /exit     leave RAKS", (self.CYAN,))
-        self._write("  1-10      open a menu section", (self.CYAN,))
-        self._write("  text      send a request to the AI engine (not ready)", (self.DIM,))
+        self._write("  /help       show this help", (self.CYAN,))
+        self._write("  /status     show system status", (self.CYAN,))
+        self._write("  /clear      clear the screen", (self.CYAN,))
+        self._write("  /menu       show the main menu", (self.CYAN,))
+        self._write("  /exit       leave RAKS", (self.CYAN,))
+        self._write("  /web        start|stop|status browser interface", (self.CYAN,))
+        self._write("  /tools      list approved tools", (self.CYAN,))
+        self._write("  /history    show recent conversation", (self.CYAN,))
+        self._write("  /backup     back up the workspace", (self.CYAN,))
+        self._write("  /restore    restore a backup archive", (self.CYAN,))
+        self._write("  /security   run defensive scan", (self.CYAN,))
+        self._write("  /code       scaffold|validate|languages", (self.CYAN,))
+        self._write("  /automate   run an automation", (self.CYAN,))
+        self._write("  /github     show repository status", (self.CYAN,))
+        self._write("  /config     show or set a setting", (self.CYAN,))
+        self._write("  /ops        log|stats", (self.CYAN,))
+        self._write("  1-10        open a menu section", (self.CYAN,))
+        self._write("  text        send a request to the AI engine", (self.DIM,))
 
     def info(self, message: str) -> None:
         self._write(f"  {message}", (self.DIM,))

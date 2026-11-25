@@ -14,6 +14,17 @@ SLASH_COMMANDS = {
     "/clear": "clear",
     "/menu": "menu",
     "/exit": "exit",
+    "/web": "web",
+    "/tools": "tools",
+    "/history": "history",
+    "/backup": "backup",
+    "/restore": "restore",
+    "/security": "security",
+    "/code": "code",
+    "/automate": "automate",
+    "/github": "github",
+    "/config": "config",
+    "/ops": "ops",
 }
 
 
@@ -44,5 +55,4 @@ class CommandInterpreter:
                 return CommandResult("menu_item", str(number))
             return CommandResult("invalid_menu", text)
 
-        # Plain text is a request for the AI engine. It is never sent to a shell.
         return CommandResult("chat", text)

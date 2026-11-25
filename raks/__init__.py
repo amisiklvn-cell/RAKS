@@ -1,3 +1,3 @@
-"""RAKS AI - hybrid personal assistant foundation."""
+"""RAKS AI - hybrid personal assistant for Android Termux."""
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
